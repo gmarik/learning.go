@@ -19,7 +19,7 @@ type Fetcher interface {
 
 // Crawl uses fetcher to recursively crawl
 // pages starting with url, to a maximum of depth.
-func Crawl(url string, found chan string, fetcher Fetcher) {
+func Crawl(url string, feed chan []string, fetcher Fetcher) {
 	// TODO: Fetch URLs in parallel.
 	// TODO: Don't fetch the same URL twice.
 	// This implementation doesn't do either:
@@ -30,17 +30,15 @@ func Crawl(url string, found chan string, fetcher Fetcher) {
 	}
 	fmt.Printf("found: %s %q\n", url, body)
 
-	for _, u := range urls {
-		found <- u
-	}
+	feed <- urls
 
-	close(found)
+	// close(found)
 }
 
 func main() {
 	new_c := make(chan string)
 	uniq_c := make(chan string)
-	feed := make(chan (chan string))
+	feed := make(chan []string)
 	ex := make(chan int)
 
 	go func() {
@@ -57,7 +55,7 @@ func main() {
 
 	go func() {
 		for batch := range feed {
-			for u := range batch {
+			for _, u := range batch {
 				new_c <- u
 			}
 		}
@@ -65,9 +63,7 @@ func main() {
 
 	go (func() {
 		for url := range uniq_c {
-			found := make(chan string)
-			feed <- found
-			go Crawl(url, found, fetcher)
+			go Crawl(url, feed, fetcher)
 		}
 	})()
 
