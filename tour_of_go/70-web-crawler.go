@@ -19,56 +19,59 @@ type Fetcher interface {
 
 // Crawl uses fetcher to recursively crawl
 // pages starting with url, to a maximum of depth.
-func Crawl(ps *ParseState, out chan *ParseState, ex chan int, fetcher Fetcher) {
+func Crawl(url string, found chan string, fetcher Fetcher) {
 	// TODO: Fetch URLs in parallel.
 	// TODO: Don't fetch the same URL twice.
 	// This implementation doesn't do either:
-	body, urls, err := fetcher.Fetch(ps.Url)
+	body, urls, err := fetcher.Fetch(url)
 	if err != nil {
 		fmt.Println(err)
 		return
 	}
-	fmt.Printf("found: %s %q\n", ps.Url, body)
+	fmt.Printf("found: %s %q\n", url, body)
 
 	for _, u := range urls {
-		out <- &ParseState{u, ps.Depth - 1}
+		found <- u
 	}
-	// close(stream)
-}
 
-type ParseState struct {
-	Url   string
-	Depth int
+	close(found)
 }
 
 func main() {
-	new_c := make(chan *ParseState)
-	uniq_c := make(chan *ParseState)
+	new_c := make(chan string)
+	uniq_c := make(chan string)
+	feed := make(chan (chan string))
 	ex := make(chan int)
 
 	go func() {
 		visited := make(map[string]bool)
-		for s := range new_c {
-			if !visited[s.Url] {
-				visited[s.Url] = true
-				uniq_c <- s
+		for url := range new_c {
+			if !visited[url] {
+				visited[url] = true
+				uniq_c <- url
 			} else {
-				fmt.Printf("Already visited %s\n", s.Url)
+				fmt.Printf("Already visited %s\n", url)
 			}
-			if s.Depth <= 0 {
-				ex <- 1
+		}
+	}()
+
+	go func() {
+		for batch := range feed {
+			for u := range batch {
+				new_c <- u
 			}
 		}
 	}()
 
 	go (func() {
-		for ps := range uniq_c {
-			// fmt.Printf("%v\n", ps)
-			go Crawl(ps, new_c, ex, fetcher)
+		for url := range uniq_c {
+			found := make(chan string)
+			feed <- found
+			go Crawl(url, found, fetcher)
 		}
 	})()
 
-	new_c <- &ParseState{"http://golang.org/", 4}
+	new_c <- "http://golang.org/"
 
 	<-ex
 }
