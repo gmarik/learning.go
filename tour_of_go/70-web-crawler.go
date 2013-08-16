@@ -19,36 +19,35 @@ type Fetcher interface {
 
 // Crawl uses fetcher to recursively crawl
 // pages starting with url, to a maximum of depth.
-func Crawl(url string, feed chan []string, fetcher Fetcher) {
+func Crawl(url string, fetcher Fetcher) []string {
 	// TODO: Fetch URLs in parallel.
 	// TODO: Don't fetch the same URL twice.
 	// This implementation doesn't do either:
 	body, urls, err := fetcher.Fetch(url)
 	if err != nil {
 		fmt.Println(err)
-		return
+		return nil
 	}
 	fmt.Printf("found: %s %q\n", url, body)
 
-	feed <- urls
-
-	// close(found)
+	return urls
 }
 
 func main() {
+	count_c := make(chan int)
 	new_c := make(chan string)
 	uniq_c := make(chan string)
+	dup_c := make(chan string)
 	feed := make(chan []string)
-	ex := make(chan int)
 
 	go func() {
-		visited := make(map[string]bool)
+		seen := make(map[string]bool)
 		for url := range new_c {
-			if !visited[url] {
-				visited[url] = true
+			if !seen[url] {
+				seen[url] = true
 				uniq_c <- url
 			} else {
-				fmt.Printf("Already visited %s\n", url)
+				dup_c <- url
 			}
 		}
 	}()
@@ -61,15 +60,39 @@ func main() {
 		}
 	}()
 
-	go (func() {
-		for url := range uniq_c {
-			go Crawl(url, feed, fetcher)
-		}
-	})()
-
 	new_c <- "http://golang.org/"
 
-	<-ex
+	var (
+		processed = 0
+		found     = 1
+	)
+
+	for {
+		select {
+		case url := <-uniq_c:
+			fmt.Println("Fetching", url)
+			go func(url string) {
+				urls := Crawl(url, fetcher)
+				count_c <- len(urls)
+				feed <- urls
+			}(url)
+		case url := <-dup_c:
+			fmt.Println("Already seen ", url)
+			processed += 1
+		case num := <-count_c:
+			fmt.Println("Scraped:", num, " urls")
+			found += num
+			processed += 1
+
+		default:
+			time.Sleep(1 * time.Millisecond)
+			if processed == found {
+				fmt.Println("Done")
+				return
+			}
+		}
+	}
+
 }
 
 // fakeFetcher is Fetcher that returns canned results.
@@ -82,7 +105,6 @@ type fakeResult struct {
 
 func (f *fakeFetcher) Fetch(url string) (string, []string, error) {
 	if res, ok := (*f)[url]; ok {
-		fmt.Printf("Fetching %s\n", url)
 		time.Sleep(1001 * time.Millisecond)
 		return res.body, res.urls, nil
 	}
