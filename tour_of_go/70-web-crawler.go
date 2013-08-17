@@ -38,7 +38,6 @@ func main() {
 	new_c := make(chan string)
 	uniq_c := make(chan string)
 	dup_c := make(chan string)
-	feed := make(chan []string)
 
 	go func() {
 		seen := make(map[string]bool)
@@ -48,14 +47,6 @@ func main() {
 				uniq_c <- url
 			} else {
 				dup_c <- url
-			}
-		}
-	}()
-
-	go func() {
-		for batch := range feed {
-			for _, u := range batch {
-				new_c <- u
 			}
 		}
 	}()
@@ -71,11 +62,13 @@ func main() {
 		select {
 		case url := <-uniq_c:
 			fmt.Println("Fetching", url)
-			go func(url string) {
+			go func(url string, count_c chan int, new_c chan string) {
 				urls := Crawl(url, fetcher)
 				count_c <- len(urls)
-				feed <- urls
-			}(url)
+				for _, nu := range urls {
+					new_c <- nu
+				}
+			}(url, count_c, new_c)
 		case url := <-dup_c:
 			fmt.Println("Already seen ", url)
 			processed += 1
@@ -87,7 +80,7 @@ func main() {
 		default:
 			time.Sleep(1 * time.Millisecond)
 			if processed == found {
-				fmt.Println("Done")
+				fmt.Println("Done:", processed, "=", found)
 				return
 			}
 		}
