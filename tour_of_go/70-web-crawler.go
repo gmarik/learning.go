@@ -8,6 +8,7 @@ package main
 
 import (
 	"fmt"
+	"math/rand"
 	"time"
 )
 
@@ -98,7 +99,9 @@ type fakeResult struct {
 
 func (f *fakeFetcher) Fetch(url string) (string, []string, error) {
 	if res, ok := (*f)[url]; ok {
-		time.Sleep(1001 * time.Millisecond)
+		duration := time.Duration(500+rand.Intn(1000)) * time.Millisecond
+		fmt.Println("Latency", duration)
+		time.Sleep(duration)
 		return res.body, res.urls, nil
 	}
 	return "", nil, fmt.Errorf("not found: %s", url)
